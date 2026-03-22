@@ -50,7 +50,16 @@ The operator needs an automated relay that forwards every new post from a source
 
 ### FR4. Login Flow
 
-- You choose the login flow.
+- The login flow uses **QR code authentication** via `login_qr.py`.
+- The operator runs `python login_qr.py` once on the target machine.
+- A QR code is printed to the terminal and must be scanned using the Telegram app:
+  - Android: Settings → Devices → Scan QR code
+  - iOS: Settings → Devices → Link Desktop Device
+- The QR code auto-refreshes every 25 seconds if not scanned in time.
+- If two-step verification (2FA) is enabled, the script prompts for the password after the scan.
+- On success, a Telethon session file is saved to the path configured in `SESSION_FILE`.
+- Phone-code delivery (`login.py`) is also included as an alternative but phone-code delivery may be unavailable depending on network or account configuration.
+- QR login does not require SMS delivery and works without receiving any code.
 
 ### FR5. Runtime Validation
 

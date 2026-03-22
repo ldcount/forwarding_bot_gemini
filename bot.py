@@ -23,7 +23,7 @@ from telethon.errors import (
     SessionPasswordNeededError,
     UnauthorizedError,
 )
-from telethon.tl.types import Message
+from telethon.tl.types import Message, PeerChannel, PeerChat, PeerUser
 
 # ---------------------------------------------------------------------------
 # Configuration loader
@@ -176,6 +176,39 @@ class AlbumBuffer:
 
 
 # ---------------------------------------------------------------------------
+# Peer ID parser
+# ---------------------------------------------------------------------------
+
+def _parse_peer(value: str):
+    """Convert a chat identifier to the type Telethon's get_entity() needs.
+
+    Accepted formats:
+      - @username or t.me/... invite link  → returned as-is (string)
+      - -1001234567890  (supergroup/channel with -100 prefix)  → PeerChannel
+      - 1234567890      (bare channel ID from @id_bot)         → PeerChannel
+      - -1234567890     (legacy group)                          → PeerChat
+    """
+    v = value.strip()
+    if not v.lstrip("-").isdigit():
+        # Username or invite link — let Telethon handle it directly
+        return v
+
+    raw = int(v)
+
+    if raw < 0:
+        s = str(-raw)
+        if s.startswith("100"):
+            # Full supergroup/channel peer: -100XXXXXXXXX
+            return PeerChannel(int(s[3:]))
+        else:
+            # Legacy group: -XXXXXXXXX
+            return PeerChat(-raw)
+    else:
+        # Bare positive ID (as returned by @id_bot for channels)
+        return PeerChannel(raw)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -205,19 +238,27 @@ async def main() -> None:
     me = await client.get_me()
     logging.info("Logged in as %s (id=%s)", me.username or me.first_name, me.id)
 
+    # --- Warm entity cache so numeric peer IDs can be resolved ---
+    logging.info("Loading dialogs to populate entity cache…")
+    await client.get_dialogs()
+
     # --- FR5: resolve source and destination entities at startup ---
     try:
-        source_entity = await client.get_entity(cfg["source_chat"])
+        source_entity = await client.get_entity(_parse_peer(cfg["source_chat"]))
         logging.info("Source resolved: %s (id=%s)", source_entity.title if hasattr(source_entity, "title") else source_entity, source_entity.id)
     except Exception as e:
-        logging.critical("Cannot resolve SOURCE_CHAT '%s': %s", cfg["source_chat"], e)
+        logging.critical(
+            "Cannot resolve SOURCE_CHAT '%s': %s\n"
+            "  Make sure the account is a member of that channel/group and the ID is correct.",
+            cfg["source_chat"], e,
+        )
         await client.disconnect()
         sys.exit(1)
 
     dest_entities = []
     for dest_str in cfg["destinations"]:
         try:
-            entity = await client.get_entity(dest_str)
+            entity = await client.get_entity(_parse_peer(dest_str))
             dest_entities.append(entity)
             logging.info(
                 "Destination resolved: %s (id=%s)",
