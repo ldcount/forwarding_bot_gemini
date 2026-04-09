@@ -24,6 +24,8 @@ from telethon.errors import (
     UnauthorizedError,
 )
 from telethon.tl.types import Message, PeerChannel, PeerChat, PeerUser
+from telethon import functions, types
+import time
 
 # ---------------------------------------------------------------------------
 # Configuration loader
@@ -209,6 +211,43 @@ def _parse_peer(value: str):
 
 
 # ---------------------------------------------------------------------------
+# Mute enforcement task
+# ---------------------------------------------------------------------------
+
+async def enforce_mute_task(client: TelegramClient, source_entity) -> None:
+    """Periodically check if the source channel is muted, and mute it if not."""
+    while True:
+        try:
+            settings = await client(functions.account.GetNotifySettingsRequest(
+                peer=source_entity
+            ))
+            
+            # mute_until is a timestamp. 2147483647 is indefinite mute.
+            # silent might also be set.
+            is_muted = getattr(settings, 'silent', False)
+            mute_until = getattr(settings, 'mute_until', 0)
+            
+            # Check if it's muted. If mute_until is less than 1 year from now, re-mute it.
+            current_time = int(time.time())
+            if not is_muted and (not mute_until or mute_until < current_time + 86400 * 365):
+                logging.info("Source channel is not fully muted. Muting it now.")
+                await client(functions.account.UpdateNotifySettingsRequest(
+                    peer=source_entity,
+                    settings=types.InputPeerNotifySettings(
+                        mute_until=2**31 - 1,
+                        silent=True
+                    )
+                ))
+            else:
+                logging.debug("Source channel is already muted. Next check in 60 minutes.")
+                
+        except Exception as e:
+            logging.error("Failed to check or update mute status: %s", e)
+            
+        await asyncio.sleep(3600)  # 60 minutes
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -273,6 +312,9 @@ async def main() -> None:
     logging.info("Startup OK — listening for new messages.")
 
     album_buffer = AlbumBuffer(client, dest_entities, cfg["forward_silent"])
+
+    # --- Start the mute enforcement task ---
+    asyncio.create_task(enforce_mute_task(client, source_entity))
 
     @client.on(events.NewMessage(chats=source_entity))
     async def handler(event: events.NewMessage.Event) -> None:
