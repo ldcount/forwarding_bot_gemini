@@ -1,0 +1,16 @@
+[Unit]
+Description=Telegram Forwarding Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/bots/forwarding_bot
+EnvironmentFile=/opt/bots/forwarding_bot/.env
+ExecStart=/opt/bots/forwarding_bot/venv/bin/python /opt/bots/forwarding_bot/bot.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

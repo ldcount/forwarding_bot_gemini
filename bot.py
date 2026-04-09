@@ -227,6 +227,11 @@ async def enforce_mute_task(client: TelegramClient, source_entity) -> None:
             is_muted = getattr(settings, 'silent', False)
             mute_until = getattr(settings, 'mute_until', 0)
             
+            if hasattr(mute_until, 'timestamp'):
+                mute_until = int(mute_until.timestamp())
+            elif not isinstance(mute_until, int):
+                mute_until = 0
+            
             # Check if it's muted. If mute_until is less than 1 year from now, re-mute it.
             current_time = int(time.time())
             if not is_muted and (not mute_until or mute_until < current_time + 86400 * 365):
